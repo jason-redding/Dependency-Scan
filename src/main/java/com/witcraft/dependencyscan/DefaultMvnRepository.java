@@ -2,6 +2,7 @@ package com.witcraft.dependencyscan;
 
 import lombok.extern.log4j.Log4j2;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 import javax.xml.xpath.XPathNodes;
@@ -11,7 +12,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Objects;
 import java.util.Optional;
@@ -61,7 +61,7 @@ public final class DefaultMvnRepository implements MvnRepository {
                 final Document document = doc.get();
                 final Node resultNode = xPathExecutor.xPathNode(document, "/response/result[@name = 'response']");
                 final Integer numFound = xPathExecutor.xPathInteger(resultNode, "@numFound");
-                final Integer startOffset = xPathExecutor.xPathInteger(resultNode, "@start");
+                // final Integer startOffset = xPathExecutor.xPathInteger(resultNode, "@start");
                 final XPathNodes items = xPathExecutor.xPathNodes(resultNode, "doc");
 
                 resultCount.compareAndSet(-1, numFound);
@@ -70,16 +70,19 @@ public final class DefaultMvnRepository implements MvnRepository {
                     // final String groupId = xPathExecutor.xPathText(item, "str[name = 'g']");
                     // final String artifactId = xPathExecutor.xPathText(item, "str[name = 'a']");
                     final String version = xPathExecutor.xPathText(item, "str[@name = 'v']");
-                    final LocalDate publishDate = LocalDate.ofInstant(Instant.ofEpochMilli(xPathExecutor.xPathLong(item, "long[@name = 'timestamp']")), SYSTEM_DEFAULT_ZONE_ID);
+                    final Instant publishDate = Instant.ofEpochMilli(xPathExecutor.xPathLong(item, "long[@name = 'timestamp']"));
 
-                    final DependencyVersion dependencyVersion = DependencyVersion.builder()
+                    final DependencyInfo.Builder dependencyBuilder = DependencyInfo.builder(dependency)
                         .withVersion(version)
-                        .withPublishDate(publishDate)
-                        .build();
+                        .withPublishDate(publishDate);
+                    Optional.of(item)
+                        .filter(Element.class::isInstance)
+                        .map(Element.class::cast)
+                        .ifPresent(dependencyBuilder::withElement);
 
-                    versionHistory.addVersion(dependencyVersion);
+                    versionHistory.addVersion(dependencyBuilder.build());
 
-                    if (Objects.equals(dependency.getVersion(), dependencyVersion.getVersion())) {
+                    if (Objects.equals(dependency.getVersion(), version)) {
                         break searchForCurrent;
                     }
                 }

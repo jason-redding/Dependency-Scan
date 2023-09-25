@@ -52,7 +52,7 @@ public final class DefaultPomScanner implements PomScanner {
             if (version == null || version.isBlank()) {
                 final DependencyInfo managedDependencyInfo = managedDependencies.get(info.getArtifactPath());
                 if (managedDependencyInfo != null) {
-                    info.withVersion(managedDependencyInfo.getVersionInfo().getVersion());
+                    info.withVersion(managedDependencyInfo.getVersion());
                 }
             }
         });

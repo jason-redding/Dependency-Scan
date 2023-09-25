@@ -5,6 +5,7 @@ import org.xml.sax.SAXException;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,36 +19,34 @@ public final class Main {
         } else {
             path = Path.of("pom.xml");
         }
+        final Instant now = Instant.now();
         final PomScanner pomScanner = DefaultPomScanner.builder(path).build();
         final Map<String, DependencyInfo> dependencyMap = pomScanner.scanDependencyInfo();
         final MvnRepository mvnRepository = DefaultMvnRepository.newInstance();
         final AtomicInteger newerDependencyCount = new AtomicInteger();
 
         for (Map.Entry<String, DependencyInfo> entry : dependencyMap.entrySet()) {
-            final DependencyInfo dependency = entry.getValue();
+            final ArtifactVersionHistory versionHistory = mvnRepository.lookupArtifactVersions(entry.getValue());
+            final DependencyInfo dependency = versionHistory.getDependency();
             final String dependencyGroupArtifact = dependency.getGroupArtifact();
-            final String dependencyGroupArtifactVersion = dependency.getGroupArtifactVersion();
-            final ArtifactVersionHistory versionHistory = mvnRepository.lookupArtifactVersions(dependency);
-            final List<DependencyVersion> dependenciesAtSameMajorVersion = versionHistory.getUpgradeVersions();
-            final List<DependencyVersion> remainingVersions = versionHistory.getOtherVersions();
+            final List<DependencyInfo> dependenciesAtSameMajorVersion = versionHistory.getUpgradeVersions();
+            final List<DependencyInfo> remainingVersions = versionHistory.getOtherVersions();
             final int upgradeCount = dependenciesAtSameMajorVersion.size();
             final int otherVersionCount = remainingVersions.size();
-            final DependencyVersion versionInfo = dependency.getVersionInfo();
-            final String majorVersion = versionInfo.getMajorVersion();
+            final String majorVersion = dependency.getMajorVersion();
 
             if (upgradeCount > 0) {
                 newerDependencyCount.incrementAndGet();
-                final DependencyVersion latestVersion = dependenciesAtSameMajorVersion.get(0);
+                final DependencyInfo latestVersion = dependenciesAtSameMajorVersion.get(0);
                 log.info(
-                    "[{}] Newer version is available: \"{}\" (published {})",
+                    "[{}] Newer version available: {}",
                     dependencyGroupArtifact,
-                    latestVersion.getVersion(),
-                    latestVersion.getPublishDate()
+                    latestVersion
                 );
             } else {
                 if (otherVersionCount > 0) {
                     final boolean isSingular = (otherVersionCount == 1);
-                    final DependencyVersion latestOtherVersion = remainingVersions.get(0);
+                    final DependencyInfo latestOtherVersion = remainingVersions.get(0);
                     log.debug(
                         "[{}] already at latest {}.x version ({}), but there {} {} newer {}{}",
                         dependencyGroupArtifact,
@@ -56,10 +55,17 @@ public final class Main {
                         (isSingular ? "is" : "are"),
                         (isSingular ? "a" : otherVersionCount),
                         (isSingular ? "version" : "versions"),
-                        (isSingular ? ": %s" : ". The latest is: %s (published %s)").formatted(latestOtherVersion.getVersion(), latestOtherVersion.getPublishDate())
+                        (isSingular ?
+                            ": %s".formatted(latestOtherVersion.getVersion()) :
+                            ". The latest is: %s (published %s ago | %s)".formatted(
+                                latestOtherVersion.getVersion(),
+                                latestOtherVersion.getAgeFrom(now).toLowerCase(),
+                                latestOtherVersion.getPublishDate()
+                            )
+                        )
                     );
                 } else {
-                    log.debug("[{}] already at latest version: {}", dependencyGroupArtifact, dependency.getVersion());
+                    log.debug("[{}] already at latest version: \"{}\" (published {} ago | {})", dependencyGroupArtifact, dependency.getVersion(), dependency.getAgeFrom(now).toLowerCase(), dependency.getPublishDate());
                 }
             }
 
